@@ -107,79 +107,81 @@ Four EduOM_DestroyObject(
     Pool     *dlPool,		/* INOUT pool of dealloc list elements */
     DeallocListElem *dlHead)	/* INOUT head of dealloc list */
 {
-	/* These local variables are used in the solution code. However, you don’t have to use all these variables in your code, and you may also declare and use additional local variables if needed. */
+	/* These local variables are used in the solution code. However, you don퓍 have to use all these variables in your code, and you may also declare and use additional local variables if needed. */
     Four        e;		/* error number */
     Two         i;		/* temporary variable */
-    FileID      fid;		/* ID of file where the object was placed */
-    PageID	pid;		/* page on which the object resides */
-    SlottedPage *apage;		/* pointer to the buffer holding the page */
-    Four        offset;		/* start offset of object in data area */
-    Object      *obj;		/* points to the object in data area */
-    Four        alignedLen;	/* aligned length of object */
-    Boolean     last;		/* indicates the object is the last one */
-    SlottedPage *catPage;	/* buffer page containing the catalog object */
+FileID      fid;      /* ID of file where the object was placed */
+    PageID   pid;      /* page on which the object resides */
+    SlottedPage *apage;      /* pointer to the buffer holding the page */
+    Four        offset;      /* start offset of object in data area */
+    Object      *obj;      /* points to the object in data area */
+    Four        alignedLen;   /* aligned length of object */
+    Boolean     last;      /* indicates the object is the last one */
+    SlottedPage *catPage;   /* buffer page containing the catalog object */
     sm_CatOverlayForData *catEntry; /* overlay structure for catalog object access */
-    DeallocListElem *dlElem;	/* pointer to element of dealloc list */
-    PhysicalFileID pFid;	/* physical ID of file */
+    DeallocListElem *dlElem;   /* pointer to element of dealloc list */
+    PhysicalFileID pFid;   /* physical ID of file */
     
     
 
     /*@ Check parameters. */
-    if (catObjForFile == NULL) ERR(eBADCATALOGOBJECT_OM);
 
-    if (oid == NULL) ERR(eBADOBJECTID_OM);
-	e = BfM_GetTrain((TrainID*)catObjForFile, &catPage, PAGE_BUF);//file id가져오기
-	if (e < 0)ERR(e);
-	GET_PTR_TO_CATENTRY_FOR_DATA(catObjForFile, catPage, catEntry);
-	fid = catEntry->fid;
-	MAKE_PHYSICALFILEID(pFid, fid.volNo, catEntry->firstPage);
-	e = BfM_FreeTrain((TrainID*)catObjForFile, PAGE_BUF);
-	if (e < 0)ERR(e);
-	pid = *((PageID *)oid);
-	e = BfM_GetTrain(&pid, (char **)&apage, PAGE_BUF);
-	if (e < 0) ERR(e);
-	if (!IS_VALID_OBJECTID(oid, apage))ERRB1(eBADOBJECTID_OM, &pid, PAGE_BUF);//oid를 포함하는지 체크
-	if (!EQUAL_FILEID(fid, apage->header.fid))ERRB1(eBADFILEID_OM, &pid, PAGE_BUF);//oid가 valid한지체크
-	e = om_RemoveFromAvailSpaceList(catObjForFile, &pid, apage);//page를 avaialbe page에서 삭제
-	if (e < 0) ERRB1(e, &pid, PAGE_BUF);
-	offset = apage->slot[-(oid->slotNo)].offset;
-	obj = &(apage->data[offset]);
-	alignedLen = MAX(sizeof(ShortPageID), ALIGNED_LENGTH(obj->header.length));//할당된크기가져오기(아래에서 마지막slot인지를 확인하기위해)
-	if (offset + sizeof(ObjectHdr) + alignedLen == apage->header.free) last = TRUE;//마지막slot인지확인
-	else last = FALSE;
-	if (last)
-		apage->header.free += sizeof(ObjectHdr) + sizeof(ObjectID);
-	else
-		apage->header.unused += sizeof(ObjectHdr) + sizeof(ObjectID);//free또는 unused변수 갱신
-	apage->slot[-(oid->slotNo)].offset = EMPTYSLOT;
-	for (i = apage->header.nSlots - 1; i >= 0 && apage->slot[-i].offset == EMPTYSLOT; i--) {
-		apage->header.nSlots--;
-	}
-	if ((apage->header.free == apage->header.unused) && !EQUAL_PAGEID(pid, pFid))//유일한 object였고, 해당페이지가 파일의 첫페이지가 아닐경우
-	{
-		e = om_FileMapDeletePage(catObjForFile, &pid);//페이지리스트에서 삭제
-		if (e < 0)ERRB1(e, &pid, PAGE_BUF);
-		e = BfM_FreeTrain(&pid, PAGE_BUF);//page deallocate
-		if (e < 0)ERR(e); 
-		e = Util_getElementFromPool(dlPool, &dlElem);
-		if (e < 0) ERR(e);
-		dlElem->type = DL_PAGE;
-		dlElem->elem.pid = pid;
-		dlElem->next = dlHead->next;
-		dlHead->next = dlElem;
-	}
-	else {
-		e = om_PutInAvailSpaceList(catObjForFile, &pid, apage);//avaiable space list에 page삽입
-		if (e < 0)ERRB1(e, &pid, PAGE_BUF);
-		e = BfM_SetDirty(&pid, PAGE_BUF);//dirty설정
-		if (e < 0) ERRB1(e, &pid, PAGE_BUF);
-		e = BfM_FreeTrain(&pid, PAGE_BUF);
-		if (e < 0) ERR(e);
-	}
-	
+   pid=*((PageID *)oid);
+   e = BfM_GetTrain(&pid, &apage, PAGE_BUF);
+   if (e < 0) ERR(e);
+   e = om_RemoveFromAvailSpaceList(catObjForFile, &pid, apage); 
+   if (e < 0) ERRB1(e, &pid, PAGE_BUF);
+   offset = apage->slot[-oid->slotNo].offset;
+   obj = apage->data + offset;
+   apage->slot[-oid->slotNo].offset = EMPTYSLOT;
+   alignedLen = sizeof(ObjectHdr) + ALIGNED_LENGTH(obj->header.length);
+   if (oid->slotNo + 1 == apage->header.nSlots)
+   {
+      apage->header.nSlots--;
+   }
+   if (offset + alignedLen == apage->header.free)
+   {
+      apage->header.free = apage->header.free - alignedLen;
+   }
+   else 
+   {
+      apage->header.unused += alignedLen;
+   }
+   e = BfM_GetTrain((TrainID*)catObjForFile, &catPage, PAGE_BUF);
+   if (e < 0) ERR(e);
+   GET_PTR_TO_CATENTRY_FOR_DATA(catObjForFile, catPage, catEntry);
+   fid = catEntry->fid;
+   last = FALSE;
+   i=0;
+   while(apage->slot[-i].offset ==EMPTYSLOT && i<apage->header.nSlots)
+   {
+	i++;
+   }
+   if (i == apage->header.nSlots)last = TRUE;
+   if (last)
+   {
+      if (pid.pageNo != catEntry->firstPage)
+      {
+         e = om_FileMapDeletePage(catObjForFile, &pid);
+         if (e < 0) ERR(e);
+	 dlElem=dlHead;
+         e = Util_getElementFromPool(dlPool, dlElem);
+         if (e < 0) ERR(e);
+         dlElem->type = DL_PAGE;
+         dlElem->elem.pid = pid;
+         dlElem->next = dlHead;
+         dlHead = dlElem;
+      }
+   }
+   else {
+      e = om_PutInAvailSpaceList(catObjForFile, &pid, apage);
+      if (e < 0) ERR(e);
+   }
+   e = BfM_FreeTrain((TrainID*)catObjForFile, PAGE_BUF);
+   if (e < 0) ERR(e);
+   e = BfM_FreeTrain(&pid, PAGE_BUF);
+   if (e < 0) ERR(e);
 
-
-    
     return(eNOERROR);
     
 } /* EduOM_DestroyObject() */

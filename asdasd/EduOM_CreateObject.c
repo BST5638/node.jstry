@@ -133,7 +133,7 @@ Four EduOM_CreateObject(
     objectHdr.length = 0;
     if (objHdr != NULL)
 	objectHdr.tag = objHdr->tag;
-	e = om_CreateObject(catObjForFile, nearObj, &objectHdr, length, data, oid);
+	e = eduom_CreateObject(catObjForFile, nearObj, &objectHdr, length, data, oid);
 	if (e < 0) ERR(e);
 
     
